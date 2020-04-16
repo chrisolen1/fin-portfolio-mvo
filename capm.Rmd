@@ -1,6 +1,6 @@
 ---
-title: "asset_exploration"
-output: html_document
+title: "capm"
+output: rmarkdown::github_document
 ---
 
 ```{r setup, include=FALSE}
