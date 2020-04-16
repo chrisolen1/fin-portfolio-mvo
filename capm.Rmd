@@ -1,0 +1,334 @@
+---
+title: "asset_exploration"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Read in portfolio asset and macroeconomic data:
+```{r}
+econ = c('CHNGDP','USGDP','EZGDP','US_UNEMP')
+
+shock = c('CHNGDP_Shock','USGDP_Shock','EZGDP_Shock','US_UNEMP_Shock')
+
+finstruments = c('UST_10YR','USFFR','USDRMB','CRUDOIL','CFE_VIX','USDEUR','UST_2YR',
+             'SP500_GSCI','USDOIS','UIVE_SP500VALUEETF','USDJPY','USDGBP')
+
+assets = c('VNQ_VANGREALEST','EMB_USDEMRGBOND','LQD_CORPBOND',
+            'MUB_MUNIBOND','SHY_1-3USTR','VIG_VANGDIV','IVV_SP500','EEM_MSCIEMERGING',
+            'XLE_ENERGYSPDR','EFA_MSCIEAFE','TIP_TIPSBOND')
+
+dataPath = "/Users/chrisolen/Documents/uchicago_courses/deep_learning_and_image_recognition/finance/fin-portfolio-mvo/data"
+dat = read.csv(paste(dataPath,"data_cleaned.csv",sep="/"), header=TRUE)
+head(dat)
+
+```
+
+### Extract just the portfolio assets, risk free rate, and market indicator:
+```{r}
+cols.use <- names(dat)[names(dat) %in% assets]
+risk.free.rate <- "USFFR"
+market.indicator <- "UIVE_SP500VALUEETF"
+full.history <- dat[,c("date",risk.free.rate,market.indicator,cols.use)]
+full.history[,"date"] = as.Date(full.history[,"date"], format = "%m/%d/%Y")
+head(full.history)
+cat("portfolio dimensions:", dim(full.history))
+
+```
+
+### Determine Year(s) of Analysis
+```{r}
+year <- c(2016,2017)
+portfolio <- subset(full.history, format(as.Date(date),"%Y")==year)
+portfolio
+```
+
+### N-Year Mean vs. Variance
+```{r}
+
+mean.sd.portfolio <- cbind(sd=apply(portfolio[,-c(1,2)],2,function(z) sd(diff(log(z)),na.rm=TRUE)), mean=apply(portfolio[,-c(1,2)],2,function(z) mean(diff(log(z)),na.rm=TRUE)))
+mean.sd.portfolio
+```
+
+```{r}
+mean.riskfree <- mean(portfolio[,2])/100/250
+mean.riskfree
+```
+
+```{r}
+plot(mean.sd.portfolio[-1,],ylab="Mean",xlab="Sd",pch=19,xlim=c(0,.04),ylim=c(-.0040,.004)) 
+points(0,mean.riskfree,col='green',pch=19) 
+points(mean.sd.portfolio[1,1],mean.sd.portfolio[1,2],col='red',pch=19) 
+text(mean.sd.portfolio[2,1],mean.sd.portfolio[2,2],labels=substring(rownames(mean.sd.portfolio)[2], 1,3),cex=.8,col="blue",pos=2)
+text(mean.sd.portfolio[3,1],mean.sd.portfolio[3,2]*-5,labels=substring(rownames(mean.sd.portfolio)[3], 1,3),cex=.8,col="green",pos=2)
+text(mean.sd.portfolio[4,1],mean.sd.portfolio[4,2]*5,labels=substring(rownames(mean.sd.portfolio)[4], 1,3),cex=.8,col="blue",pos=2)
+text(mean.sd.portfolio[5,1],mean.sd.portfolio[5,2],labels=substring(rownames(mean.sd.portfolio)[5], 1,3),cex=.8,col="blue",pos=2)
+text(mean.sd.portfolio[6,1],mean.sd.portfolio[6,2],labels=substring(rownames(mean.sd.portfolio)[6], 1,3),cex=.8,col="blue",pos=2)
+text(mean.sd.portfolio[7,1],mean.sd.portfolio[7,2]*-1.5,labels=substring(rownames(mean.sd.portfolio)[7], 1,3),cex=.8,col="blue",pos=2)
+text(mean.sd.portfolio[8,1],mean.sd.portfolio[8,2]*6,labels=substring(rownames(mean.sd.portfolio)[8], 1,3),cex=.8,col="blue",pos=2)
+text(mean.sd.portfolio[9,1],mean.sd.portfolio[9,2]*6,labels=substring(rownames(mean.sd.portfolio)[9], 1,3),cex=.8,col="blue",pos=2)
+text(mean.sd.portfolio[10,1],mean.sd.portfolio[10,2]*6,labels=substring(rownames(mean.sd.portfolio)[10], 1,3),cex=.8,col="blue",pos=2)
+text(mean.sd.portfolio[11,1],mean.sd.portfolio[11,2]*6,labels=substring(rownames(mean.sd.portfolio)[11], 1,3),cex=.8,col="blue",pos=2)
+
+```
+
+```{r}
+plot(mean.sd.portfolio[-1,],ylab="Mean",xlab="Sd",pch=19,xlim=c(0,.04),ylim=c(-.0040,.004)) 
+points(0,mean.riskfree,col='green',pch=19) 
+points(mean.sd.portfolio[1,1],mean.sd.portfolio[1,2],col='red',pch=19) 
+lines(c(0,3*mean.sd.portfolio[1,1]),c(mean.riskfree,3*mean.sd.portfolio[1,2]),col='red') 
+text(mean.sd.portfolio[1,1],mean.sd.portfolio[1,2],labels="market",cex=.8,col="red",pos=2)
+text(.0025,mean.riskfree*5,labels="riskfree",cex=.8,col="green",pos=2)
+
+```
+
+### Pull out highest n-year return given level of risk
+```{r}
+# ef: efficient frontier
+bool.ef.asset <- unname(mean.sd.portfolio[,2]/mean.sd.portfolio[,1] == max(mean.sd.portfolio[,2]/mean.sd.portfolio[,1])) 
+ratios <- mean.sd.portfolio[,2]/mean.sd.portfolio[,1]
+top.ratio <- ratios[bool.ef.asset] 
+plot(mean.sd.portfolio[-1,],ylab="Mean",xlab="Sd",pch=19,xlim=c(0,.04),ylim=c(-.0040,.004)) 
+points(mean.sd.portfolio[which(bool.ef.asset == TRUE),1],mean.sd.portfolio[which(bool.ef.asset == TRUE),2],col='yellow', pch=19)
+points(0,mean.riskfree,col='green',pch=19)
+lines(c(0,3*mean.sd.portfolio[which(bool.ef.asset == TRUE),1]),c(mean.riskfree,3*mean.sd.portfolio[which(bool.ef.asset == TRUE),2]),col='orange') 
+text(mean.sd.portfolio[which(bool.ef.asset == TRUE),1],mean.sd.portfolio[which(bool.ef.asset == TRUE),2],labels=rownames(mean.sd.portfolio)[which(bool.ef.asset == TRUE)],cex=.8,col="orange",pos=2)
+```
+
+### Cumulative Returns of High-Yield/Risk Vs. Least Risky
+```{r}
+# pull out index of highest return given level of risk
+ef.asset.index <- which(bool.ef.asset == TRUE)
+ef.asset <- portfolio[,-c(1:2)][ef.asset.index]
+
+# pull out index of least risky
+bool.lowest.risk <- unname(mean.sd.portfolio[,1] == min(mean.sd.portfolio[,1]))
+lowest.risk.index <- which(bool == TRUE)
+lowest.risk.asset <- portfolio[,-c(1:2)][lowest.risk.index]
+
+# plot
+labDates <- paste(format(portfolio[,1],"%m"),format(portfolio[,1],"%d"),sep="/")
+matplot(portfolio$date[-1],cbind(cumsum(diff(log(as.matrix(lowest.risk.asset)))),cumsum(diff(log(as.matrix(ef.asset))))),type="l",lty=1,lwd=3,col=c("red","gold"),ylab="Cumulative Returns",xlab="Date",xaxt="n")
+axis.Date(1, at = portfolio$date[-1])
+legend("topleft", legend=c(colnames(lowest.risk.asset), colnames(ef.asset)), col=c("red", "yellow"), lty=1:2, cex=0.8)
+
+```
+
+### Mixing ef.asset with lowest.risk.asset, to provide the same level of risk as lowest.risk.asset with a higher return
+```{r}
+# frontier line is line from riskfree rate to ef.asset
+frontier.data <- data.frame(rbind(c(mean.riskfree,0), c(mean(diff(log(as.matrix(ef.asset)))), sd(diff(log(as.matrix(ef.asset))))))) 
+colnames(frontier.data) <- c("means","sds") 
+rownames(frontier.data) <- c("risk.free","ef.asset")
+
+# regressing means of frontier line on risks of frontier line
+frontier.line <- lm(means ~ sds, data = frontier.data) 
+
+# extracting lowest.risk.asset risk
+
+portfolio.required.sd <- mean.sd.portfolio[lowest.risk.index,1]
+new <- data.frame(sds = portfolio.required.sd)
+
+# predicting the return on the frontier line given EMB-level risk
+portfolio.required.mean <- predict(frontier.line, new)
+
+# looking for the point on the frontier line corresponding to the required return
+proportion.risky <- (portfolio.required.mean - frontier.data[1,1])/(-frontier.data[1,1] + frontier.data[2,1])
+proportion.riskless <- 1-proportion.risky
+
+# create the new portfolio with a mixture of these two assets according to the aboth
+mixRFKR.returns <- (portfolio[-1,2]/100/250)*proportion.riskless + diff(log(as.matrix(ef.asset)))*proportion.risky
+matplot(portfolio$date[-1], cbind(cumsum(diff(log(as.matrix(lowest.risk.asset)))), cumsum(mixRFKR.returns), cumsum(diff(log(as.matrix(ef.asset))))),type="l",lty=1,lwd=3,col=c("red","purple","gold"), ylab="Cumulative Returns",xlab="Date",xaxt="n")
+legend("topleft",legend=c("lowest.risk","mixed", "ef.asset"),col=c("red","purple","gold"),lty=1)
+axis.Date(1, at = portfolio$date[-1])
+
+```
+
+### Confirming that the risk of the mixed is the same as that of lowest.risk.asset
+```{r}
+ c(LowestRisk=sd(diff(log(as.matrix(lowest.risk.asset)))),RiskMixedPortfolio=sd(mixRFKR.returns))
+```
+
+### Capital Asset Pricing Model (CAPM)
+```{r}
+# examining the sensitivity of each individual asset to the market (defined as SP500)
+riskfree.daily <- portfolio[,2]/100/365
+market <- portfolio[,3]
+
+# we regress the log-difference asset retuns minus the daily FFR against the 'market' returns minus the daily FFR
+portfolioBetas <- apply(as.matrix(portfolio[,-c(1,2)]),2,function(z) lm(I(diff(log(z))-riskfree.daily[-length(riskfree.daily)])~-1+I(diff(log(market))-riskfree.daily[-length(riskfree.daily)]))$coefficients)
+
+# betas are estimated as slopes of each excess log returns sample to the SPY excess log returns
+plot(1:length(portfolioBetas),portfolioBetas,xlab="Index")
+portfolioBetas
+```
+
+### Plot the Beta-Mean Returns Space
+```{r}
+meanReturns <- mean.sd.portfolio[,2]
+portfolioBetas[length(portfolioBetas)+1] <- 0
+meanReturns[length(meanReturns)+1] <- 0
+plot(portfolioBetas, meanReturns, pch = 19)
+points(0,0,col='green',pch = 19) 
+points(portfolioBetas[1],meanReturns[1],col='red',pch=19) 
+text(portfolioBetas[1],meanReturns[1],labels=colnames(portfolio[3]),cex=.8,col="orange",pos=2) 
+lines(c(0,4*portfolioBetas[1]),c(0,4*meanReturns[1]),col='red')
+```
+
+We recall that CAPM states that those assets that land above the line are undervalued and should be purchased while those below the line are overvalued and should be shorted. Thus, in the former case, we are speculating that the value will go up, and in the latter case, we are speculating that the price will go down. 
+
+### Market-Neutral Portfolio Per CAPM
+```{r}
+# SML = Security Market Line
+SML <- data.frame(a=mean.riskfree, b=mean.sd.portfolio[1,2]-mean.riskfree) 
+x <- portfolioBetas[-c(1,length(portfolioBetas))]
+y <- SML$a + SML$b * x
+```
+
+```{r}
+### Long Portfolio ###
+# create long portfolio based on SML
+longPortfolio <- mean.sd.portfolio[-1,2] > y 
+cat("longPortfolio assets:\n",names(mean.sd.portfolio[-1,2][longPortfolio]),"\n")
+
+# plot long portfolio
+plot(portfolioBetas[-c(1,length(portfolioBetas))], mean.sd.portfolio[-1,2],ylab="Mean Returns",xlab="Betas",pch=19,xlim=c(0,2))
+points(1,mean.sd.portfolio[1,2],col="red",pch=19)
+points(0,mean.riskfree,col="green",pch=19) 
+lines(c(0,2),c(mean.riskfree,1.75*mean.sd.portfolio[1,2]),col="red") 
+points(portfolioBetas[-c(1,length(portfolioBetas))][longPortfolio],mean.sd.portfolio[-1,2][longPortfolio],col="gold",pch=16)
+
+# calculate weights of the long portfolio based on the the distance to the SML
+# we assume that the further an asset is above the line, the more undervalued it is, so the more of it we want to be long in
+d <- mean.sd.portfolio[-1,2][longPortfolio]-(SML$a + (SML$b*portfolioBetas[-c(1,length(portfolioBetas))][longPortfolio]))
+longOnlyWeights <- d/sum(d)
+cat("longOnlyWeights:\n",head(longOnlyWeights),"\n")
+
+# calculate the initial value of the weighted long portfolio
+longOnlyValue <- as.matrix(portfolio[1,-c(1:3)])[longPortfolio]%*%longOnlyWeights 
+cat("initial value of weighted long portfolio:\n",longOnlyValue)
+```
+
+We note that assets with negative returns but larger Betas are moving positively with the market and are thus said to be overvalued. 
+
+```{r}
+### Short Portfolio ###
+cat("short portfolio assets:\n",names(!longPortfolio),"\n")
+
+# calculate weights of the short portfolio based on the the distance to the SML
+# we assume that the further an asset is below the line, the more overvalued it is, so the more of it we want to short
+d <- (SML$a + (SML$b*portfolioBetas[-c(1,length(portfolioBetas))][!longPortfolio]))-mean.sd.portfolio[-1,2][!longPortfolio]
+shortOnlyWeights <- d/sum(d)
+cat("short portfolio weights:\n", shortOnlyWeights, "\n")
+
+# calculate the initial value of the weighted short portfolio
+shortOnlyValue <- as.matrix(portfolio[1,-c(1:3)])[!longPortfolio]%*%shortOnlyWeights 
+cat("short portfolio initial value:", shortOnlyValue, "\n")
+
+```
+
+```{r}
+# determine whether long or short portfolio begin at higher value
+c(longOnlyValue=longOnlyValue, shortOnlyValue=shortOnlyValue)
+higher = c(longOnlyValue=longOnlyValue, shortOnlyValue=shortOnlyValue) == max(c(longOnlyValue=longOnlyValue, shortOnlyValue=shortOnlyValue))
+
+if (higher[1]) {
+  portfolioProportion <- longOnlyValue/shortOnlyValue
+  cat("Long:Short Proportion ", portfolioProportion, "\n")
+  c(longOnlyShares=longOnlyValue/shortOnlyValue, shortOnlyShares=1)
+
+  # value trajectory of the long only portfolio, given the weights
+  longValueTrajectory <- as.matrix(portfolio[,-(1:3)])[,longPortfolio]%*%longOnlyWeights 
+  # value trajectory of the short only portfolio, given the weights
+  shortValueTrajectory <- as.matrix(portfolio[,-(1:3)])[,!longPortfolio]%*%shortOnlyWeights 
+  totallongshortTrajectory <- longValueTrajectory%*%portfolioProportion-shortValueTrajectory
+
+  matplot(portfolio$date, totallongshortTrajectory,type="l",xlab="year",xaxt="n",ylab="Value of Market-Neutral Portfolio")
+  axis.Date(1, at = portfolio$date)
+  
+} else {
+  
+  portfolioProportion <- shortOnlyValue/longOnlyValue
+  cat("Short:Long Proportion: ", portfolioProportion, "\n")
+  c(shortOnlyShares=shortOnlyValue/longOnlyValue, longOnlyShares=1)
+
+  # value trajectory of the long only portfolio, given the weights
+  longValueTrajectory <- as.matrix(portfolio[,-(1:3)])[,longPortfolio]%*%longOnlyWeights 
+  # value trajectory of the short only portfolio, given the weights
+  shortValueTrajectory <- as.matrix(portfolio[,-(1:3)])[,!longPortfolio]%*%shortOnlyWeights 
+  totalPortfolioTrajectory <- longValueTrajectory%*%portfolioProportion-shortValueTrajectory
+
+  matplot(portfolio$date, totalPortfolioTrajectory,type="l",xlab="year",xaxt="n",ylab="Value of Market-Neutral Portfolio")
+  axis.Date(1, at = portfolio$date)
+
+}
+
+```
+
+### lowest.risk.asset vs. ef.asset vs. mixed.risk vs. LongShort (CAPM)
+```{r}
+matplot(portfolio$date[-1], cbind(cumsum(diff(log(as.matrix(lowest.risk.asset)))), cumsum(mixRFKR.returns), cumsum(diff(log(as.matrix(ef.asset)))), cumsum(diff(log(totallongshortTrajectory)))),type="l",lty=1,lwd=3,col=c("red","purple","gold", "blue"), ylab="Cumulative Returns",xlab="Date",xaxt="n")
+legend("topleft",legend=c("lowest.risk","mixed.risk", "ef.asset", "longshort.portfolio"),col=c("red","purple","gold", "blue"),lty=1)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
