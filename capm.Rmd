@@ -105,7 +105,7 @@ ef.asset <- portfolio[,-c(1:2)][ef.asset.index]
 
 # pull out index of least risky
 bool.lowest.risk <- unname(mean.sd.portfolio[,1] == min(mean.sd.portfolio[,1]))
-lowest.risk.index <- which(bool == TRUE)
+lowest.risk.index <- which(bool.lowest.risk == TRUE)
 lowest.risk.asset <- portfolio[,-c(1:2)][lowest.risk.index]
 
 # plot
