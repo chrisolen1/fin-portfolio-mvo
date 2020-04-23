@@ -1,0 +1,272 @@
+---
+title: "risk_metrics"
+output: rmarkdown::github_document
+---
+
+```{r}
+riskScripts <- "/Users/chrisolen/Documents/uchicago_courses/deep_learning_and_image_recognition/finance/fin-portfolio-mvo/risk_scripts"
+source(paste(riskScripts,"RMfit.R",sep="/"))
+source(paste(riskScripts,"RMeasure.R",sep="/"))
+source(paste(riskScripts,"Hill.R",sep="/"))
+source(paste(riskScripts,"SimGarcht.R",sep="/"))
+library(fGarch)
+library(ellipse)
+
+```
+
+### Read in portfolio asset and macroeconomic data:
+```{r}
+econ = c('CHNGDP','USGDP','EZGDP','US_UNEMP')
+
+shock = c('CHNGDP_Shock','USGDP_Shock','EZGDP_Shock','US_UNEMP_Shock')
+
+finstruments = c('UST_10YR','USFFR','USDRMB','CRUDOIL','CFE_VIX','USDEUR','UST_2YR',
+             'SP500_GSCI','USDOIS','UIVE_SP500VALUEETF','USDJPY','USDGBP')
+
+assets = c('VNQ_VANGREALEST','EMB_USDEMRGBOND','LQD_CORPBOND',
+            'MUB_MUNIBOND','SHY_1-3USTR','VIG_VANGDIV','IVV_SP500','EEM_MSCIEMERGING',
+            'XLE_ENERGYSPDR','EFA_MSCIEAFE','TIP_TIPSBOND')
+
+dataPath = "/Users/chrisolen/Documents/uchicago_courses/deep_learning_and_image_recognition/finance/fin-portfolio-mvo/data"
+dat = read.csv(paste(dataPath,"data_cleaned.csv",sep="/"), header=TRUE)
+head(dat)
+
+```
+
+### Extract just the portfolio assets, risk free rate, and market indicator:
+```{r}
+cols.use <- names(dat)[names(dat) %in% assets]
+risk.free.rate <- "USFFR"
+market.indicator <- "UIVE_SP500VALUEETF"
+var.explained = 0.8
+nDay.forecastHorizon <- 10
+full.history <- dat[,c("date",risk.free.rate,market.indicator,cols.use)]
+full.history[,"date"] = as.Date(full.history[,"date"], format = "%m/%d/%Y")
+head(full.history)
+cat("portfolio dimensions:", dim(full.history))
+
+```
+
+### Determine Year(s) of Analysis
+```{r}
+year <- c(2016,2017)
+portfolio <- subset(full.history, format(as.Date(date),"%Y")==year)
+head(portfolio)
+```
+
+### Convert to log returns:
+```{r}
+portfolio.returns <- apply(log(portfolio[,-(1:3)]),2,diff)
+head(portfolio.returns)
+```
+
+### Explore Pearson correlations between assets
+```{r}
+corr.matrix <- cor(portfolio.returns)
+ord <- order(corr.matrix[1,])
+xc <- corr.matrix[ord, ord]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc, col=colors[5*xc + 6])
+
+```
+
+### Pearson correlation after removing the influence of the first factor (hedge w.r.t the first factor):
+```{r}
+corr.matrix.pear <- cor((portfolio.returns-approximations.PC1)) 
+ord <- order(corr.matrix.pear[1,])
+xc <- corr.matrix.pear[ord, ord]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc, col=colors[5*xc + 6])
+
+```
+
+### Spearman correlation after removing the influence of the first factor (hedge w.r.t the first factor):
+```{r}
+corr.matrix.spear <- cor((portfolio.returns-approximations.PC1),method="spearman") 
+ord <- order(corr.matrix.spear[1,])
+xc <- corr.matrix.spear[ord, ord]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc, col=colors[5*xc + 6])
+
+```
+
+### Kendall correlation after removing the influence of the first factor (hedge w.r.t the first factor):
+```{r}
+corr.matrix.kend <- cor((portfolio.returns-approximations.PC1),method="kendall") # n_comonotonic pairs vs. n_countermonotonic pairs 
+ord <- order(corr.matrix.kend[1,])
+xc <- corr.matrix.kend[ord, ord]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc, col=colors[5*xc + 6])
+
+```
+
+### Plot Pearson vs. Spearman and Pearson vs. Kendall
+```{r}
+pear.v.spear <- corr.matrix.pear-corr.matrix.spear
+ord1 <- order(pear.v.spear[1,])
+xc1 <- pear.v.spear[ord1, ord1]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc1, col=colors[5*xc1 + 6])
+
+pear.v.kend <- corr.matrix.pear-corr.matrix.kend
+ord2 <- order(pear.v.kend[1,])
+xc2 <- pear.v.kend[ord2, ord2]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc2, col=colors[5*xc2 + 6])
+
+
+
+```
+
+Spearman and, in particular, Kendall shows slightly higher correlation than Pearson. 
+
+### Plot empirical copula
+```{r}
+pairs(apply((portfolio.returns-approximations)[,1:10],2,rank))
+```
+
+Empirical copula show some nonlinear dependency between assets such as VANREAL and ENERGY.
+
+### Risk Metrics
+
+RiskMetrics assumes that the continuously compounded daily rate of return $r_t$ (and therefore the loss variable $x_t$) of a portfolio follows a conditional normal distribution. Such that: 
+$$x_t|F_{t-1}~N(0,σ_t^2)$$
+…where $σ_t^2$ is the conditional variance of $x_t$ and it evolves over time according to GARCH(1,1):
+$$x_t=µ+σ_t^2 ε_t$$
+$$σ_t^2=∝σ_{t-1}^2+(1-∝)x_{t-1}^2,1>∝>0$$
+
+Under the GARCH(1,1) model, the conditional variance is proportional to the time horizon k, such that:
+$$σ_t^2 [k]=kσ_{t+1}^2$$
+
+VaR given time horizon k and normally distributed loss variable $z$:
+$$VaR_{1-p}=Value of Position×z_{1-p}×√k×σ_{t+1} $$
+
+### Calculate risk metrics via Garch and then RMeasure:
+```{r}
+# fit garch (1,1) with Gaussian innovations to loss variables (xt = -rt)
+xt <- -portfolio.returns
+gaussianRM.oneDay.95p <- matrix(data=NA,nrow=dim(xt)[2],ncol=2)
+
+for (i in 1:dim(xt)[2]){
+  gm <- garchFit(~garch(1,1),data=xt[,i],trace=F) 
+  # extract one-day mean and sd from garch
+  oneday.mean <- predict(gm,1)[1,1]
+  oneday.sd <- predict(gm,1)[1,3]
+  rm <- RMeasure(oneday.mean, oneday.sd)
+  gaussianRM.oneDay.95p[i,1:2] <- rm$results[1,2:3]
+}
+
+colnames(gaussianRM.oneDay.95p) <- c("VaR","ES")
+rownames(gaussianRM.oneDay.95p) <- colnames(portfolio.returns)
+gaussianRM.oneDay.95p
+```
+
+```{r}
+# fit garch (1,1) with Student-t innovations to loss variables (xt = -rt)
+xt <- -portfolio.returns
+stdRM.oneDay.95p <- matrix(data=NA,nrow=dim(xt)[2],ncol=2)
+
+for (i in 1:dim(xt)[2]){
+  gm <- garchFit(~garch(1,1),data=xt[,i],trace=F, cond.dist="std")
+  # extract one-day mean and sd from garch
+  oneday.mean <- predict(gm,1)[1,1]
+  oneday.sd <- predict(gm,1)[1,3]
+  # extract dof
+  dof <- gm2@fit$matcoef[5,1]
+  rm <- RMeasure(oneday.mean,oneday.sd,cond.dist="std",df=dof)
+  stdRM.oneDay.95p[i,1:2] <- rm$results[1,2:3]
+}
+
+colnames(stdRM.oneDay.95p) <- c("VaR","ES")
+rownames(stdRM.oneDay.95p) <- colnames(portfolio.returns)
+stdRM.oneDay.95p
+```
+
+### Compare the two one-day risk metrics
+```{r}
+# Gaussian Garch
+gaussianRM.oneDay.95p
+
+# Student-t Garch
+stdRM.oneDay.95p
+```
+
+### Calculate multi-day risk metrics for garch with Gaussian innovations
+```{r}
+# fit garch (1,1) with Gaussian innovations to loss variables (xt = -rt)
+xt <- -portfolio.returns
+gaussianRM.multiDay.95p <- matrix(data=NA,nrow=dim(xt)[2],ncol=2)
+
+for (i in 1:dim(xt)[2]){
+  gm <- garchFit(~garch(1,1),data=xt[,i],trace=F)
+  # recalling that under the GARCH(1,1) model, the conditional variance is proportional to the time horizon k
+  multi.day.predictions <- predict(gm,nDay.forecastHorizon)
+  mf <- multi.day.predictions$meanForecast 
+  merr <- multi.day.predictions$meanError 
+  pmean <- sum(mf) 
+  pvar <- sum(merr^2) 
+  pstd <- sqrt(pvar) 
+  rm <- RMeasure(pmean,pstd)
+  
+  gaussianRM.multiDay.95p[i,1:2] <- rm$results[1,2:3]
+}
+
+colnames(gaussianRM.multiDay.95p) <- c("VaR","ES")
+rownames(gaussianRM.multiDay.95p) <- colnames(portfolio.returns)
+gaussianRM.multiDay.95p
+
+
+```
+
+### Calculate multi-day risk metrics for garch with Student-t innovations
+```{r}
+# We note that the sum of k standardized Student-t distributed random variables is not going to also be distributed as the same standardized Student - unlike in the case of Gaussian innovations. Thus, we need to compute multi-period risk metrics via simulating the garch model:
+
+# fit garch (1,1) with Student-t innovations to loss variables (xt = -rt)
+xt <- -portfolio.returns
+stdRM.multiDay.95p <- matrix(data=NA,nrow=dim(xt)[2],ncol=2)
+
+for (i in 1:dim(xt)[2]){
+  gm <- garchFit(~garch(1,1),data=xt[,i],trace=F, cond.dist="std")
+  vol <- volatility(gm)
+  alpha1 <- gm@fit$matcoef[3,1]
+  omega <- gm@fit$matcoef[2,1]
+  alpha1 <- c(omega, alpha1)
+  mu <- gm@fit$matcoef[1,1]
+  beta1 <- gm@fit$matcoef[4,1]
+  dof <- gm@fit$matcoef[5,1]
+
+  # determine the origin of the simulation from the last instance
+  orig <- c(xt[length(xt[,i])], vol[length(xt[,i])])
+  set.seed(8473625)
+  sim <- SimGarcht(h=nDay.forecastHorizon,mu=mu,alpha=alpha1,b1=beta1,df=dof,ini=orig,nter=30000) 
+  rr <- sim$rtn
+
+  #VaR
+  VaR <- quantile(rr,0.95)
+  stdRM.multiDay.95p[i,1] <- VaR
+  # ES for p = 0.05 
+  idx.p05 <- c(1:30000)[rr > VaR] 
+  ES <- mean(rr[idx.p05])
+  stdRM.multiDay.95p[i,2] <- ES
+  
+}
+
+colnames(stdRM.multiDay.95p) <- c("VaR","ES")
+rownames(stdRM.multiDay.95p) <- colnames(portfolio.returns)
+stdRM.multiDay.95p
+
+
+```
+
+### Compare two multi-day risk metrics
+```{r}
+# Gaussian Garch
+gaussianRM.multiDay.95p
+# Student-t Garch
+stdRM.multiDay.95p
+
+```
+
+
+

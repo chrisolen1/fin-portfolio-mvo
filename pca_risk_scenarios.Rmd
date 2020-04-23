@@ -1,0 +1,169 @@
+---
+title: "pca_risk_scenarios"
+output: rmarkdown::github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ellipse)
+library(car)
+```
+
+### Read in portfolio asset and macroeconomic data:
+```{r}
+econ = c('CHNGDP','USGDP','EZGDP','US_UNEMP')
+
+shock = c('CHNGDP_Shock','USGDP_Shock','EZGDP_Shock','US_UNEMP_Shock')
+
+finstruments = c('UST_10YR','USFFR','USDRMB','CRUDOIL','CFE_VIX','USDEUR','UST_2YR',
+             'SP500_GSCI','USDOIS','UIVE_SP500VALUEETF','USDJPY','USDGBP')
+
+assets = c('VNQ_VANGREALEST','EMB_USDEMRGBOND','LQD_CORPBOND',
+            'MUB_MUNIBOND','SHY_1-3USTR','VIG_VANGDIV','IVV_SP500','EEM_MSCIEMERGING',
+            'XLE_ENERGYSPDR','EFA_MSCIEAFE','TIP_TIPSBOND')
+
+dataPath = "/Users/chrisolen/Documents/uchicago_courses/deep_learning_and_image_recognition/finance/fin-portfolio-mvo/data"
+dat = read.csv(paste(dataPath,"data_cleaned.csv",sep="/"), header=TRUE)
+head(dat)
+
+```
+
+### Extract just the portfolio assets, risk free rate, and market indicator:
+```{r}
+cols.use <- names(dat)[names(dat) %in% assets]
+risk.free.rate <- "USFFR"
+market.indicator <- "UIVE_SP500VALUEETF"
+var.explained = 0.8
+full.history <- dat[,c("date",risk.free.rate,market.indicator,cols.use)]
+full.history[,"date"] = as.Date(full.history[,"date"], format = "%m/%d/%Y")
+head(full.history)
+cat("portfolio dimensions:", dim(full.history))
+
+```
+
+### Determine Year(s) of Analysis
+```{r}
+year <- c(2016,2017)
+portfolio <- subset(full.history, format(as.Date(date),"%Y")==year)
+head(portfolio)
+```
+
+### Convert to log returns:
+```{r}
+portfolio.returns <- apply(log(portfolio[,-(1:3)]),2,diff)
+head(portfolio.returns)
+```
+
+### Select PCA factors:
+```{r}
+n.assets <- dim(portfolio.returns)[2]
+portfolio.returns.PCA <- prcomp(portfolio.returns)
+summary(portfolio.returns.PCA)$importance[,1:n.assets]
+
+# select number of factors based on accounting for at least var.explained percentage of the variance
+prop.var <- summary(portfolio.returns.PCA)$importance[2,1:n.assets]
+nFactors <- n.assets - sum(cumsum(prop.var) > var.explained) + 1 
+cat("number of factors to be used: ",nFactors)
+```
+
+
+```{r}
+# generate factors loadings
+factorLoadings <- portfolio.returns.PCA$rotation[,1:nFactors] 
+# generate factor scores
+factorScores <- portfolio.returns%*%factorLoadings 
+# generate zero loading
+zeroLoading <- portfolio.returns.PCA$center
+
+# generate approximation of original returns after dim reduction
+nFactorAppr <- factorScores%*%t(factorLoadings)
+
+# we want to get a good idea of how well the factor approximations are at predicting the real thing
+r.squareds <- mapply(col.ind = 1:ncol(nFactorAppr), function(col.ind){summary(lm(portfolio.returns[,col.ind]~nFactorAppr[,col.ind]))$r.squared})
+
+# get a density plot of all of the r-squared's
+plot(density(r.squareds), main = "Distribution of Determination Coefficients") 
+# how well factors actually do predict the original assets
+abline(v=mean(r.squareds), col = "green") 
+# expected amount of variance explained given the number of factors we chose in PCA
+abline(v=summary(portfolio.returns.PCA)$importance[3,nFactors],lwd=2,col="red") 
+legend("topleft",legend=c("mean r-squared","expected for nFactors"),col=c("green","red" ),lty=1, cex = 0.6)
+
+# visualize factor loadings plotted against each individual asset's first return of the sample
+matplot(1:length(portfolio.returns[1,]),factorLoadings,type="l") 
+abline(h=0)
+
+```
+
+In certain cases, factorLoadings may be all positive or all negative across assets. In certain cases, it will depend on the asset for a given factorLoading. 
+
+### Approximation of stock returns for the first day of the time sample
+```{r}
+approximations.day1 <- factorScores[1,]%*%t(factorLoadings) + zeroLoading 
+# plotting approximations for day one versus actual day one
+plot(1:length(portfolio.returns[1,]),portfolio.returns[1,]) 
+points(1:length(portfolio.returns[1,]),approximations.day1,col="red")
+
+```
+
+### Approximation of stock returns based on first risk factor (PC1)
+```{r}
+approximations.PC1 <- factorScores[,1]%*%t(factorLoadings[,1]) + zeroLoading 
+# plotting approximations for day one versus actual day one
+plot(1:length(portfolio.returns),portfolio.returns) 
+points(1:length(portfolio.returns),approximations.PC1,col="red")
+
+```
+
+### Plot concentration ellipse for first two factors, denoting 86th and 99th percentiles
+```{r}
+dtel <- dataEllipse(factorScores[,1:2],levels=c(.99,.86466),xlim=c(-.5,.5),ylim=c(-.3,.5))
+
+# or alternatively:
+plot(factorScores[,1:2],xlim=c(-.5,.5),ylim=c(-.3,.5)) 
+lines(dtel$`0.99`,col="red") 
+lines(dtel$`0.86466`,col="blue")
+```
+
+
+### Create four scenarios corresponding to the extreme points on the 99% concentration ellipse:
+```{r}
+# west scenario is values corresponding to 1st percentile of first PC
+W < -dtel$`0.99`[which.min(dtel$`0.99`[,1]),] 
+# east scenario is values corresponding to 99th percentile of the first PC
+E <- dtel$`0.99`[which.max(dtel$`0.99`[,1]),] 
+# south scenario is values corresponding to 1st percentile of the second PC
+S <- dtel$`0.99`[which.min(dtel$`0.99`[,2]),] 
+# north scenario is values corresponding to the 99th percentile of the second PC
+N <- dtel$`0.99`[which.max(dtel$`0.99`[,2]),] 
+(scenarios.99th<-rbind(W,E,N,S))
+
+# plotting on ellipse
+plot(factorScores,xlim=c(-.5,.5),ylim=c(-.3,.5)) 
+lines(dtel$`0.99`,col="red") 
+points(scenarios,pch=16,col="blue")
+
+# calculating and plotting returns: take scenario values and transform back to log returns via factorLoadings
+approximationsW <- scenarios["W",]%*%t(factorLoadings[,1:2])+zeroLoading 
+approximationsE <- scenarios["E",]%*%t(factorLoadings[,1:2])+zeroLoading 
+approximationsN <- scenarios["N",]%*%t(factorLoadings[,1:2])+zeroLoading 
+approximationsS <- scenarios["S",]%*%t(factorLoadings[,1:2])+zeroLoading 
+
+# worst case scenario
+plot(1:length(approximationsW),approximationsW,col="orange",pch=16,ylim=c(-.05,.05),ylab="Scenario Approximations",xlab="Index") 
+# best case
+points(1:length(approximationsW),approximationsE,col="magenta",pch=16) 
+# second best
+points(1:length(approximationsW),approximationsN,col="blue",pch=16) 
+# second worst
+points(1:length(approximationsW),approximationsS,col="green",pch=16) 
+abline(h=0)
+
+rbind(TotalReturns=c(W=sum(approximationsW), E=sum(approximationsE), N=sum(approximationsN), S=sum(approximationsS)),
+      AverageReturns=c(W=mean(approximationsW), E=mean(approximationsE), N=mean(approximationsN),S=mean(approximationsS)))
+
+```
+
