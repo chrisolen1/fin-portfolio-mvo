@@ -132,25 +132,25 @@ lines(dtel$`0.86466`,col="blue")
 ### Create four scenarios corresponding to the extreme points on the 99% concentration ellipse:
 ```{r}
 # west scenario is values corresponding to 1st percentile of first PC
-W < -dtel$`0.99`[which.min(dtel$`0.99`[,1]),] 
+W <- dtel$`0.99`[which.min(dtel$`0.99`[,1]),] 
 # east scenario is values corresponding to 99th percentile of the first PC
 E <- dtel$`0.99`[which.max(dtel$`0.99`[,1]),] 
 # south scenario is values corresponding to 1st percentile of the second PC
 S <- dtel$`0.99`[which.min(dtel$`0.99`[,2]),] 
 # north scenario is values corresponding to the 99th percentile of the second PC
 N <- dtel$`0.99`[which.max(dtel$`0.99`[,2]),] 
-(scenarios.99th<-rbind(W,E,N,S))
+(scenarios.99th <- rbind(W,E,N,S))
 
 # plotting on ellipse
 plot(factorScores,xlim=c(-.5,.5),ylim=c(-.3,.5)) 
 lines(dtel$`0.99`,col="red") 
-points(scenarios,pch=16,col="blue")
+points(scenarios.99th,pch=16,col="blue")
 
 # calculating and plotting returns: take scenario values and transform back to log returns via factorLoadings
-approximationsW <- scenarios["W",]%*%t(factorLoadings[,1:2])+zeroLoading 
-approximationsE <- scenarios["E",]%*%t(factorLoadings[,1:2])+zeroLoading 
-approximationsN <- scenarios["N",]%*%t(factorLoadings[,1:2])+zeroLoading 
-approximationsS <- scenarios["S",]%*%t(factorLoadings[,1:2])+zeroLoading 
+approximationsW <- scenarios.99th["W",]%*%t(factorLoadings[,1:2])+zeroLoading 
+approximationsE <- scenarios.99th["E",]%*%t(factorLoadings[,1:2])+zeroLoading 
+approximationsN <- scenarios.99th["N",]%*%t(factorLoadings[,1:2])+zeroLoading 
+approximationsS <- scenarios.99th["S",]%*%t(factorLoadings[,1:2])+zeroLoading 
 
 # worst case scenario
 plot(1:length(approximationsW),approximationsW,col="orange",pch=16,ylim=c(-.05,.05),ylab="Scenario Approximations",xlab="Index") 
@@ -167,3 +167,69 @@ rbind(TotalReturns=c(W=sum(approximationsW), E=sum(approximationsE), N=sum(appro
 
 ```
 
+### Explore Pearson correlations between assets
+```{r}
+corr.matrix <- cor(portfolio.returns)
+ord <- order(corr.matrix[1,])
+xc <- corr.matrix[ord, ord]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc, col=colors[5*xc + 6])
+
+```
+
+### Pearson correlation after removing the influence of the first factor (hedge w.r.t the first factor):
+```{r}
+corr.matrix.pear <- cor((portfolio.returns-approximations.PC1)) 
+ord <- order(corr.matrix.pear[1,])
+xc <- corr.matrix.pear[ord, ord]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc, col=colors[5*xc + 6])
+
+```
+
+### Spearman correlation after removing the influence of the first factor (hedge w.r.t the first factor):
+```{r}
+corr.matrix.spear <- cor((portfolio.returns-approximations.PC1),method="spearman") 
+ord <- order(corr.matrix.spear[1,])
+xc <- corr.matrix.spear[ord, ord]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc, col=colors[5*xc + 6])
+
+```
+
+### Kendall correlation after removing the influence of the first factor (hedge w.r.t the first factor):
+```{r}
+corr.matrix.kend <- cor((portfolio.returns-approximations.PC1),method="kendall") # n_comonotonic pairs vs. n_countermonotonic pairs 
+ord <- order(corr.matrix.kend[1,])
+xc <- corr.matrix.kend[ord, ord]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc, col=colors[5*xc + 6])
+
+```
+
+### Plot Pearson vs. Spearman and Pearson vs. Kendall
+```{r}
+pear.v.spear <- corr.matrix.pear-corr.matrix.spear
+ord1 <- order(pear.v.spear[1,])
+xc1 <- pear.v.spear[ord1, ord1]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc1, col=colors[5*xc1 + 6])
+
+pear.v.kend <- corr.matrix.pear-corr.matrix.kend
+ord2 <- order(pear.v.kend[1,])
+xc2 <- pear.v.kend[ord2, ord2]
+colors <- c("#A50F15","#DE2D26","#FB6A4A","#FCAE91","#FEE5D9","white", "#EFF3FF","#BDD7E7","#6BAED6","#3182BD","#08519C")
+plotcorr(xc2, col=colors[5*xc2 + 6])
+
+
+
+```
+
+Spearman and, in particular, Kendall shows slightly higher correlation than Pearson. 
+
+### Plot empirical copula
+```{r}
+pairs(apply((portfolio.returns-approximations.PC1)[,1:10],2,rank))
+```
+
+Empirical copula show some nonlinear dependency between assets such as VANREAL and ENERGY.
