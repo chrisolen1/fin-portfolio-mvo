@@ -1,0 +1,139 @@
+---
+title: "evt_var"
+output: rmarkdown::github_document
+---
+
+```{r}
+riskScripts <- "/Users/chrisolen/Documents/uchicago_courses/deep_learning_and_image_recognition/finance/fin-portfolio-mvo/risk_scripts"
+source(paste(riskScripts,"RMfit.R",sep="/"))
+source(paste(riskScripts,"RMeasure.R",sep="/"))
+source(paste(riskScripts,"Hill.R",sep="/"))
+source(paste(riskScripts,"SimGarcht.R",sep="/"))
+library(fGarch)
+library(ellipse)
+library(evir) 
+
+```
+
+### Read in portfolio asset and macroeconomic data:
+```{r}
+econ = c('CHNGDP','USGDP','EZGDP','US_UNEMP')
+
+shock = c('CHNGDP_Shock','USGDP_Shock','EZGDP_Shock','US_UNEMP_Shock')
+
+finstruments = c('UST_10YR','USFFR','USDRMB','CRUDOIL','CFE_VIX','USDEUR','UST_2YR',
+             'SP500_GSCI','USDOIS','UIVE_SP500VALUEETF','USDJPY','USDGBP')
+
+assets = c('VNQ_VANGREALEST','EMB_USDEMRGBOND','LQD_CORPBOND',
+            'MUB_MUNIBOND','SHY_1-3USTR','VIG_VANGDIV','IVV_SP500','EEM_MSCIEMERGING',
+            'XLE_ENERGYSPDR','EFA_MSCIEAFE','TIP_TIPSBOND')
+
+dataPath = "/Users/chrisolen/Documents/uchicago_courses/deep_learning_and_image_recognition/finance/fin-portfolio-mvo/data"
+dat = read.csv(paste(dataPath,"data_cleaned.csv",sep="/"), header=TRUE)
+head(dat)
+
+```
+
+### Extract just the portfolio assets, risk free rate, and market indicator:
+```{r}
+cols.use <- names(dat)[names(dat) %in% assets]
+risk.free.rate <- "USFFR"
+market.indicator <- "UIVE_SP500VALUEETF"
+var.explained = 0.8
+nDay.forecastHorizon <- 10
+full.history <- dat[,c("date",risk.free.rate,market.indicator,cols.use)]
+full.history[,"date"] = as.Date(full.history[,"date"], format = "%m/%d/%Y")
+head(full.history)
+cat("portfolio dimensions:", dim(full.history))
+
+```
+
+### Determine Year(s) of Analysis
+```{r}
+year <- c(2016,2017)
+portfolio <- subset(full.history, format(as.Date(date),"%Y")==year)
+head(portfolio)
+```
+
+### Convert to log returns:
+```{r}
+portfolio.returns <- apply(log(portfolio[,-(1:3)]),2,diff)
+head(portfolio.returns)
+```
+
+### Hill and Pickands Estimations
+```{r}
+# we use the non-parametric Hill and Pickands approach to estimate the value of shape parameter of Frechet distribution, ξ. for a generalized Pareto analysis of heavy-tailed data using the gpd function (below), it helps to plot the Hill estimates for xi. 
+
+# create loss variable (xt = -rt)
+xt <- -portfolio.returns
+hill(xt,option=c("xi"),end=length(xt)/3)
+
+# estimation for xi is fairly stable between order statistics 180 and 366. We note that the xi is significantly different from zero, indicating a Frechet distribution. 
+
+```
+
+
+```{r}
+# plot exponential quantiles versus order statistic quantiles to confirm the necessity of the shape parameter xi. we note that an exponential distribution has a fatter tail than a GPD with shape param xi. 
+
+qplot(xt,threshold=0.01,pch='*',cex=0.8,main="Loss variable")
+```
+
+### Mean Excess Plot
+```{r}
+# Mean excess loss of realizations of loss random variable that exceed a certain threshold of loss
+# Straight line with positive gradient above some threshold is a sign of Pareto behavior in the tail
+# A downward trend shows thin-tailed behavior
+# A line with zero gradient shows an exponential tail
+
+meplot(portfolio.returns[,1])
+abline(v=.01,col="red") 
+title(main="Daily log returns")
+```
+
+### Peaks Over Threshold
+
+The weaknesses of traditional EVT include:
+1. The choice of subperiod length $n$ is not clearly defined
+2. By using only subperiod maxima, the approach does not make efficient use of the loss data 
+3. The approach is unconditional and, hence, does not take into consideration the effects of other explanatory variables. 
+POT looks at exceedances of the loss over some high threshold and the times at which the exceedances occur. As a result, POT does not require the choice of block size, but it requires the choice of the threshold level. The rule of thumb is to choose a threshold that gets exceeded at least 5% of the time by the sample. We define the following
+
+•$x_{t}$
+•$η$
+•$t_{i}$
+
+Instead of using the marginal distribution as for EVT (e.g. the limiting distribution of the minimum or maximum), the POT approach employes a conditional distribution to handle the magnitude of exceedance given that the measurement exceed a threshold. The chance of exceeding the threshold is governed by a probability law. In other words, the POC approach considers the conditional distribution of $y=x_{t}-η|x_{t}>η$. 
+
+The occurence of the event $x_{t}>η$ follows a point process (e.g. Poisson process). In particular, if the intensity parameter $λ$ of the process is time invariant, then the Poisson process is homogenous. If λ is time variant, then the process is non-homogenous. 
+```{r}
+# fit pot models via pot function: we note that the threshold by which the mean excess plot begins to tick up is typically a good threshold with which to fit pot
+
+pot.m1 <- pot(xt,threshold=0.01) # pot model objects contain params of GPD, etc.
+pot.m2 <- pot(xt,threshold=0.012) 
+pot.m3 <- pot(xt,threshold=0.008)
+
+# calculate VaR and ES for each of the models:
+cat(".01 loss threshold: \n")
+riskmeasures(pot.m1,c(0.95,0.99)) # Threshold=0.01
+cat(".012 loss threshold: \n") 
+riskmeasures(pot.m2,c(0.95,0.99)) # Threshold=0.012
+cat(".008 loss threshold: \n")
+riskmeasures(pot.m3,c(0.95,0.99)) # Threshold=0.008
+```
+
+### Estimation via GPD
+```{r}
+# create a plot showing how the estimate of a high quantile in the tail of a dataset based on the GPD approximation varies with threshold or number of extremes
+(quant(xt,.999)) # yields estimates of the 99th percentile quantile of GPD-distributed dataset
+```
+
+```{r}
+# we choose a threshold based on the above where (a) we leave sufficient exceedances for estimation and (b) the quantile estimation remains fairly stabler
+(gpd1 <- gpd(xt,threshold=.0177))
+riskmeasures(gpd1,c(.95,.99,.999,.9999))
+summary(xt)
+```
+
+
