@@ -4,6 +4,9 @@ This repo explores various portfolio management theories, forecasting techniques
 
 The initial portfolio simulated on is comprised of 11 ETFs and 31 additional financial and macroeconomic predictors was inspired by Obeidat et. al's<sup>3</sup> paper on adaptive portfolio asset allocation optimization. 
 
+## CAPM Portfolio Returns vs. APT Portfolio Returns vs. Efficient Frontier Asset Returns
+
+![](capm_and_apt_files/figure-gfm/unnamed-chunk-26-1.png)
 
 ## Citations 
 
