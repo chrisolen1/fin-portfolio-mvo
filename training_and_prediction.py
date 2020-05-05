@@ -14,6 +14,8 @@ import tqdm
 
 import julia
 
+import time
+
 import argparse
 parser = argparse.ArgumentParser(description='train parser')
 
@@ -187,10 +189,12 @@ model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
               loss='mse')    
 model.summary()
 
-checkpoints = tf.keras.callbacks.ModelCheckpoint(checkpoint_dir + "/saved_model.hdf5", verbose=1, 
-                                                     save_best_only=True, 
-                                                     mode='auto', 
-                                                     save_freq='epoch')
+checkpoints = tf.keras.callbacks.ModelCheckpoint("./model_checkpoints/saved_weights.hdf5", 
+    verbose=5, 
+    save_weights_only=True, 
+    save_best_only=True, 
+    mode='auto', 
+    save_freq='epoch')
 
 # burn in period
 
@@ -216,23 +220,25 @@ for i in tqdm.tqdm(range(len(features)-burn_in_length)):
 
     # extract training features for the current time-step (includes all instances up to the current time-step)
     training_features = features.iloc[0:burn_in_length+i,:]
-    print("training features shape: ", training_features.shape)
+  
     # extract response variables (log returns) for the current time-step
     training_response = log_returns.iloc[0:burn_in_length+i,:]
-    print("training response shape: ", training_response.shape)
     
     # generate training epoch of sliding windows for current time-step
     X, y = generate_epoch(training_features, training_response, n_timesteps, look_ahead_time)
     
     print("X shape: ", X.shape)
     print("y shape: ", y.shape)
+    
     # load latest model weights
-    print("loading model")
-    try:
-        model = tf.keras.models.load_model(wkdir + "model_checkpoints/saved_model.hdf5")
-    except:
-        print("i guess we're not!!!")
-    print("training")
+    print("loading model....")
+    start_loading = time.time()
+    model.load_weights("./model_checkpoints/saved_weights.hdf5")
+    end_loading = time.time()
+    loading_time = end_loading - start_loading
+    print("loading time: ", loading_time)    
+    
+    print("training...")
     # fit to features for current time-step
     model.fit(X, y,
           validation_split = validation_split,
@@ -242,14 +248,13 @@ for i in tqdm.tqdm(range(len(features)-burn_in_length)):
     
     # extract most recent window of features for current time-step prediction
     pred_window = np.array(features.iloc[-n_timesteps:,:]).reshape(1,n_timesteps,features.shape[1])
-    print("pred_window: ", pred_window)
+    
     # extract log returns for the last 'vol_window' time-steps for current 'vol_window'-day volatility
     returns_vol_window = np.array(log_returns.iloc[-vol_window:,:])
-    print("vol window: ", returns_vol_window)
     
     # predict mu for tomorrow
     mu = model.predict(pred_window)
-    print("mu: ", mu)
+    
     # find current sigma 
     sigma = np.dot(np.transpose(returns_vol_window),returns_vol_window)
     
@@ -263,7 +268,7 @@ for i in tqdm.tqdm(range(len(features)-burn_in_length)):
         # run mvo julia optimizer
         j.include("mvo.jl")
     except:
-        print("skipping!")
+        print("skipped julia!")
         pass
     
     # pull in optimal weights from optimizer for rebalancing
@@ -274,9 +279,12 @@ for i in tqdm.tqdm(range(len(features)-burn_in_length)):
     # append rebalanced weights to daily_portfolio_weights object
     daily_portfolio_weights.append(weights)
 
+    # clear in-mem TF graph
+    tf.keras.backend.clear_session()
+
     print("finished iteration", i, " of ", len(features)-burn_in_length)
     
-print("okay, we're done now!")
+print("training completed")
 
 # move daily portfolio weights to df
 
