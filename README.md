@@ -8,6 +8,10 @@ The initial portfolio simulated on is comprised of 11 ETFs and 31 additional fin
 
 ![](capm_and_apt_files/figure-gfm/unnamed-chunk-26-1.png)
 
+## Deep Learning Approach with MVO
+
+After a pre-training period of 400 business days, I make next-day predictions for all 11 ETF values based on a 10-day sliding window of previous ETF values and other macroeconomic and financial predictors and then immediately adjust the portfolio weights using a mean-variance optimization algorithm, which maximizes expected return with respect to 10-day volatility observed in each of the assets. 
+
 ## Citations 
 
 <sup>1</sup> https://infobase.thomsonreuters.com/
