@@ -8,4 +8,5 @@ This repo explores various portfolio management theories, forecasting techniques
 ## Citations 
 
 <sup>1</sup> https://infobase.thomsonreuters.com/
+
 <sup>2</sup> https://wrds-www.wharton.upenn.edu/
